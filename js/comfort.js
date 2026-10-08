@@ -1,4 +1,4 @@
-/* Modelo de confort térmico: PMV de Fanger + SET de Gagge (dos nodos) con el método de ASHRAE 55-2023. */
+/* Modelo de confort térmico: PMV de Fanger + SET de Gagge (dos nodos), con el mismo procedimiento que CBE Thermal Comfort Tool (ASHRAE 55-2023). */
 (function (G) {
   'use strict';
 
@@ -29,133 +29,159 @@
     return (0.303 * Math.exp(-0.036 * m) + 0.028) * (mw - hl1 - hl2 - hl3 - hl4 - hl5 - hl6);
   }
 
-  /* ---------- correcciones por actividad (ASHRAE 55-2023) ---------- */
-  // Velocidad relativa: Vr = Va + 0.3·(M − 1) si M > 1 met; si no, Vr = Va.
-  const relativeSpeed = (va, met) => (met > 1 ? va + 0.3 * (met - 1) : va);
-  // Aislamiento dinámico: Icl,d = Icl·(0.6 + 0.4/M) si M > 1.2 met; si no, Icl.
+  /* ---------- Procedimiento de CBE Thermal Comfort Tool (comfort-models.js) ----------
+     Portado de https://comfort.cbe.berkeley.edu/static/js/comfort-models.js */
+  const P_ATM = 101325;          // Pa (psy.PROP.Patm)
+  const STILL_AIR = 0.1;         // m/s
+
+  // Velocidad relativa: Vr = Va + 0.3·(M − 1) si M > 1 met (y la opción de velocidad por actividad está activa).
+  const relativeSpeed = (va, met, self = true) => (self && met > 1 ? va + 0.3 * (met - 1) : va);
+  // Aislamiento dinámico: Icl,d = Icl·(0.6 + 0.4/M) si M > 1.2 met.
   const dynamicClo = (clo, met) => (met > 1.2 ? clo * (0.6 + 0.4 / met) : clo);
 
-  /* ---------- SET: modelo de dos nodos de Gagge (ASHRAE 55 App. D / Gagge 1986) ----------
-     Recibe velocidad y aislamiento ya corregidos por actividad (vr, Icl,d); no los vuelve a corregir.
-     calcCE = true desactiva el h_c por actividad (así se usa en el cálculo del efecto de enfriamiento). */
-  function set(ta, tr, vr, rh, met, clo, calcCE) {
-    const wme = 0, bsa = 1.8258, kClo = 0.25, bw = 70, mFactor = 58.2, sbc = 5.6697e-8;
+  // Búsqueda de raíces de CBE (util.js): secante con tolerancia absoluta sobre f, y bisección de respaldo.
+  function secant(a, b, fn, eps) {
+    let f1 = fn(a);
+    if (Math.abs(f1) <= eps) return a;
+    let f2 = fn(b);
+    if (Math.abs(f2) <= eps) return b;
+    for (let i = 0; i < 100; i++) {
+      const slope = (f2 - f1) / (b - a);
+      if (slope === 0) return NaN;
+      let c = b - f2 / slope;
+      if (c < 0) c = 0;
+      if (c > 100) c = 100;
+      const f3 = fn(c);
+      if (Math.abs(f3) < eps) return c;
+      a = b; b = c; f1 = f2; f2 = f3;
+    }
+    return NaN;
+  }
+  function bisect(a, b, fn, eps, target) {
+    let mid;
+    while (Math.abs(b - a) > 2 * eps) {
+      mid = (b + a) / 2;
+      const aT = fn(a), bT = fn(b), mT = fn(mid);
+      if ((aT - target) * (mT - target) < 0) b = mid;
+      else if ((bT - target) * (mT - target) < 0) a = mid;
+      else return -999;
+    }
+    return mid;
+  }
+
+  /* SET (Gagge, dos nodos) — comf.pierceSET de CBE. vel y clo son los que reciba el modelo (sin correcciones internas).
+     calcCE = true desactiva el h_c por actividad (se usa solo en el cálculo del efecto de enfriamiento). */
+  function set(ta, tr, vel, rh, met, clo, wme = 0, calcCE = false, maxSkinBloodFlow = 90, position = 'sitting') {
+    const vp = rh * satTorr(ta) / 100, airSpeed = Math.max(vel, 0.1);
+    const kClo = 0.25, bw = 69.9, bsa = 1.8258, mFactor = 58.2, sbc = 0.000000056697;
     const cSw = 170, cDil = 120, cStr = 0.5;
-    const tsN = 33.7, tcN = 36.8, sbfN = 6.3;
-    let alfa = 0.1;
-    const tbN = alfa * tsN + (1 - alfa) * tcN;
-    let tsk = tsN, tcr = tcN, mbl = sbfN, esk = 0.1 * met;
-    const vp = rh * satTorr(ta) / 100, av = Math.max(vr, 0.1);
-    const lr = 2.2, rClo = 0.155 * clo, faCl = 1 + 0.15 * clo;
-    const rm = (met - wme) * mFactor;
+    const tsN = 33.7, tcN = 36.8, tbN = 36.49, sbfN = 6.3;
+
+    let tsk = tsN, tcr = tcN, sbf = sbfN, alfa = 0.1, esk = 0.1 * met;
+    const pAtm = (P_ATM / 1000) * 0.009869;
+    const rCl = 0.155 * clo, facl = 1 + 0.15 * clo, lr = 2.2 / pAtm;
+    const rm = met * mFactor;
     let m = met * mFactor;
-    const iCl = clo > 0 ? 0.45 : 1;
-    const wMax = clo > 0 ? 0.59 * Math.pow(av, -0.08) : 0.38 * Math.pow(av, -0.29);
 
-    let hcc = Math.max(3.0, 8.600001 * Math.pow(av, 0.53));
-    if (!calcCE && met > 0.85) hcc = Math.max(hcc, 5.66 * Math.pow(met - 0.85, 0.39));
+    let wcrit, icl;
+    if (clo <= 0) { wcrit = 0.38 * Math.pow(airSpeed, -0.29); icl = 1.0; }
+    else { wcrit = 0.59 * Math.pow(airSpeed, -0.08); icl = 0.45; }
 
-    let hr = 4.7, ht = hr + hcc, ra = 1 / (faCl * ht), top = (hr * tr + hcc * ta) / ht;
-    const qRes = 0.0023 * m * (44 - vp), cRes = 0.0014 * m * (34 - ta);
-    let qSens = 0, w = 0, tcl;
+    const hcMet = met < 0.85 ? 3.0 : 5.66 * Math.pow(met - 0.85, 0.39);
+    let chc = 3.0 * Math.pow(pAtm, 0.53);
+    chc = Math.max(chc, 8.600001 * Math.pow(airSpeed * pAtm, 0.53));
+    if (!calcCE) chc = Math.max(chc, hcMet);
 
-    for (let sim = 1; sim < 60; sim++) {
-      tcl = (ra * tsk + rClo * top) / (ra + rClo);
-      for (let k = 0; k < 150; k++) {
-        hr = 4 * 0.95 * sbc * Math.pow((tcl + tr) / 2 + 273.15, 3) * 0.73;
-        ht = hr + hcc; ra = 1 / (faCl * ht); top = (hr * tr + hcc * ta) / ht;
-        const next = (ra * tsk + rClo * top) / (ra + rClo), done = Math.abs(next - tcl) <= 0.01;
-        tcl = next;
-        if (done) break;
-      }
-      qSens = (tsk - top) / (ra + rClo);
-      const hfcs = (tcr - tsk) * (5.28 + 1.163 * mbl);
-      const sCore = m - hfcs - qRes - cRes - wme, sSkin = hfcs - qSens - esk;
-      const tcSk = 0.97 * alfa * bw, tcCr = 0.97 * (1 - alfa) * bw;
-      tsk += sSkin * bsa / (tcSk * 60); tcr += sCore * bsa / (tcCr * 60);
+    let chr = 4.7, ctc = chr + chc, ra = 1 / (facl * ctc), top = (chr * tr + chc * ta) / ctc;
+    let tcl = top + (tsk - top) / (ctc * (ra + rCl)), tclOld = tcl, flag = true;
+    let dry = 0, pwet = 0, ersw = 0, edif = 0;
+    const radArea = position === 'sitting' ? 0.7 : 0.73;
+
+    for (let tim = 1; tim <= 60; tim++) {
+      let guard = 0;
+      do {
+        if (flag) {
+          tclOld = tcl;
+          chr = 4.0 * 0.95 * sbc * Math.pow((tcl + tr) / 2 + 273.15, 3) * radArea;
+          ctc = chr + chc; ra = 1 / (facl * ctc); top = (chr * tr + chc * ta) / ctc;
+        }
+        tcl = (ra * tsk + rCl * top) / (ra + rCl);
+        flag = true;
+      } while (Math.abs(tcl - tclOld) > 0.01 && ++guard < 1000);
+      flag = false;
+      dry = (tsk - top) / (ra + rCl);
+      const hfcs = (tcr - tsk) * (5.28 + 1.163 * sbf);
+      const eres = 0.0023 * m * (44 - vp), cres = 0.0014 * m * (34 - ta);
+      const scr = m - hfcs - eres - cres - wme, ssk = hfcs - dry - esk;
+      const tcsk = 0.97 * alfa * bw, tccr = 0.97 * (1 - alfa) * bw;
+      tsk += ssk * bsa / (tcsk * 60); tcr += scr * bsa / (tccr * 60);
       const tb = alfa * tsk + (1 - alfa) * tcr;
-      const skSig = tsk - tsN, warmSk = Math.max(skSig, 0), coldSk = Math.max(-skSig, 0);
-      const crSig = tcr - tcN, warmC = Math.max(crSig, 0), coldC = Math.max(-crSig, 0);
-      const warmB = Math.max(tb - tbN, 0);
-      mbl = Math.max(0.5, Math.min(90, (sbfN + cDil * warmC) / (1 + cStr * coldSk)));
-      const ersw0 = 0.68 * Math.min(500, cSw * warmB * Math.exp(warmSk / 10.7));
-      const rea = 1 / (lr * faCl * hcc), recl = rClo / (lr * iCl);
-      let emax = (satTorr(tsk) - vp) / (rea + recl);
-      if (emax === 0) emax = 0.001;
-      let ersw = ersw0, prsw = ersw / emax;
-      w = 0.06 + 0.94 * prsw;
-      let ediff = w * emax - ersw;
-      if (w > wMax) { w = wMax; prsw = wMax / 0.94; ersw = prsw * emax; ediff = 0.06 * (1 - prsw) * emax; }
-      if (emax < 0) { ediff = 0; ersw = 0; w = wMax; }
-      esk = ersw + ediff;
-      m = rm + 19.4 * coldSk * coldC;
-      alfa = 0.0417737 + 0.7451833 / (mbl + 0.585417);
+      const sksig = tsk - tsN, warms = Math.max(sksig, 0), colds = Math.max(-sksig, 0);
+      const crsig = tcr - tcN, warmc = Math.max(crsig, 0), coldc = Math.max(-crsig, 0);
+      const warmb = Math.max(tb - tbN, 0);
+      sbf = (sbfN + cDil * warmc) / (1 + cStr * colds);
+      if (sbf > maxSkinBloodFlow) sbf = maxSkinBloodFlow;
+      if (sbf < 0.5) sbf = 0.5;
+      let regsw = cSw * warmb * Math.exp(warms / 10.7);
+      if (regsw > 500) regsw = 500;
+      ersw = 0.68 * regsw;
+      const rea = 1 / (lr * facl * chc), recl = rCl / (lr * icl);
+      const emax = (satTorr(tsk) - vp) / (rea + recl);
+      let prsw = ersw / emax;
+      pwet = 0.06 + 0.94 * prsw;
+      edif = pwet * emax - ersw;
+      if (pwet > wcrit) { pwet = wcrit; prsw = wcrit / 0.94; ersw = prsw * emax; edif = 0.06 * (1 - prsw) * emax; }
+      if (emax < 0) { edif = 0; ersw = 0; pwet = wcrit; prsw = wcrit; }
+      esk = ersw + edif;
+      m = rm + 19.4 * colds * coldc;
+      alfa = 0.0417737 + 0.7451833 / (sbf + 0.585417);
     }
 
-    // Ambiente estándar (50 % HR, aire quieto, Ta = MRT) con ropa estándar para la actividad
-    const qSkin = qSens + esk, pSsk = satTorr(tsk);
-    let hcS = 3.0;
-    if (!calcCE && met > 0.85) hcS = Math.max(hcS, 5.66 * Math.pow(met - 0.85, 0.39));
-    const htS = hcS + hr;
-    const cloS = 1.52 / ((met - wme / mFactor) + 0.6944) - 0.1835, rClS = 0.155 * cloS;
-    const faS = 1 + kClo * cloS, fClS = 1 / (1 + 0.155 * faS * htS * cloS), imS = 0.45;
-    const iClS = imS * hcS / htS * (1 - fClS) / (hcS / htS - fClS * imS);
-    const hdS = 1 / (1 / (faS * htS) + rClS), heS = 1 / (1 / (lr * faS * hcS) + rClS / (lr * iClS));
-    let xo = tsk - qSkin / hdS, x = xo, dx = 100;
-    for (let n = 0; Math.abs(dx) > 0.01 && n < 100; n++) {
-      const d = 0.0001;
-      const e1 = qSkin - hdS * (tsk - xo) - w * heS * (pSsk - 0.5 * satTorr(xo));
-      const e2 = qSkin - hdS * (tsk - (xo + d)) - w * heS * (pSsk - 0.5 * satTorr(xo + d));
-      x = xo - d * e1 / (e2 - e1); dx = x - xo; xo = x;
+    // Ambiente estándar de ASHRAE 55 (50 % HR, aire quieto, Ta = MRT, ropa estándar para la actividad)
+    const hsk = dry + esk, pssk = satTorr(tsk);
+    let chcS = 3.0 * Math.pow(pAtm, 0.53);
+    if (!calcCE && met > 0.85) chcS = Math.max(chcS, hcMet);
+    if (chcS < 3.0) chcS = 3.0;
+    const ctcS = chcS + chr;
+    const rclos = 1.52 / (met - wme / mFactor + 0.6944) - 0.1835, rcls = 0.155 * rclos;
+    const facls = 1 + kClo * rclos, fcls = 1 / (1 + 0.155 * facls * ctcS * rclos), ims = 0.45;
+    const icls = ims * chcS / ctcS * (1 - fcls) / (chcS / ctcS - fcls * ims);
+    const hdS = 1 / (1 / (facls * ctcS) + rcls);
+    const heS = 1 / (1 / (lr * facls * chcS) + rcls / (lr * icls));
+    const delta = 0.0001;
+    let dx = 100, xOld = tsk - hsk / hdS, x = xOld;
+    for (let n = 0; Math.abs(dx) > 0.01 && n < 1000; n++) {
+      const e1 = hsk - hdS * (tsk - xOld) - pwet * heS * (pssk - 0.5 * satTorr(xOld));
+      const e2 = hsk - hdS * (tsk - (xOld + delta)) - pwet * heS * (pssk - 0.5 * satTorr(xOld + delta));
+      x = xOld - delta * e1 / (e2 - e1); dx = x - xOld; xOld = x;
     }
     return x;
   }
 
-  // Método de Brent (mismo algoritmo que scipy.optimize.brentq, que usa CBE). NaN si no hay cambio de signo.
-  function brent(f, xa, xb) {
-    const xtol = 2e-12, rtol = 8.881784197001252e-16;
-    let xpre = xa, xcur = xb, xblk = 0, fpre = f(xpre), fcur = f(xcur), fblk = 0, spre = 0, scur = 0;
-    if (fpre * fcur > 0) return NaN;
-    if (fpre === 0) return xpre;
-    if (fcur === 0) return xcur;
-    for (let i = 0; i < 100; i++) {
-      if (fpre * fcur < 0) { xblk = xpre; fblk = fpre; spre = scur = xcur - xpre; }
-      if (Math.abs(fblk) < Math.abs(fcur)) { xpre = xcur; xcur = xblk; xblk = xpre; fpre = fcur; fcur = fblk; fblk = fpre; }
-      const delta = (xtol + rtol * Math.abs(xcur)) / 2, sbis = (xblk - xcur) / 2;
-      if (fcur === 0 || Math.abs(sbis) < delta) return xcur;
-      if (Math.abs(spre) > delta && Math.abs(fcur) < Math.abs(fpre)) {
-        let stry;
-        if (xpre === xblk) stry = -fcur * (xcur - xpre) / (fcur - fpre);
-        else {
-          const dpre = (fpre - fcur) / (xpre - xcur), dblk = (fblk - fcur) / (xblk - xcur);
-          stry = -fcur * (fblk * dblk - fpre * dpre) / (dblk * dpre * (fblk - fpre));
-        }
-        if (2 * Math.abs(stry) < Math.min(Math.abs(spre), 3 * Math.abs(sbis) - delta)) { spre = scur; scur = stry; }
-        else spre = scur = sbis;
-      } else spre = scur = sbis;
-      xpre = xcur; fpre = fcur;
-      xcur += Math.abs(scur) > delta ? scur : (sbis > 0 ? delta : -delta);
-      fcur = f(xcur);
-    }
-    return xcur;
+  // Efecto de enfriamiento (comf.cooling_effect): ΔT restado a Ta y MRT que da, en aire quieto, el mismo SET.
+  // vr y clo deben ser los ya corregidos por actividad.
+  function coolingEffect(ta, tr, vr, rh, met, clo, wme = 0) {
+    if (vr <= STILL_AIR) return 0;
+    const eps = 0.001;
+    const target = set(ta, tr, vr, rh, met, clo, wme, true, 90, 'standing');
+    const fn = c => target - set(ta - c, tr - c, STILL_AIR, rh, met, clo, wme, true, 90, 'standing');
+    let ce = secant(0, 40, fn, eps);
+    if (isNaN(ce)) ce = bisect(0, 40, fn, eps, 0);
+    return ce < 0 ? 0 : ce;
   }
 
-  // Efecto de enfriamiento (ASHRAE 55 App. H): ΔT que, restado a Ta y MRT en aire quieto (0.1 m/s), da el mismo SET.
-  function coolingEffect(ta, tr, vr, rh, met, clo) {
-    if (vr <= 0.1) return 0;
-    const target = set(ta, tr, vr, rh, met, clo, true);
-    const f = c => set(ta - c, tr - c, 0.1, rh, met, clo, true) - target;
-    const ce = brent(f, 0, 40);
-    return isFinite(ce) ? ce : 0;
-  }
-
-  // PMV / PPD según ASHRAE 55-2023. Si vr > 0.1 m/s se resta el efecto de enfriamiento a Ta y MRT y se usa vr = 0.1.
-  // vr y clo deben venir ya corregidos por actividad (relativeSpeed / dynamicClo).
-  function pmvppd(ta, tr, vr, rh, met, clo) {
-    let ce = coolingEffect(ta, tr, vr, rh, met, clo);
-    if (ce < 0.005) ce = 0; // CE inapreciable (CBE lo redondea a 0.01): el aire no enfría y PMV usa vr tal cual
-    const pmv = fanger(ta - ce, tr - ce, ce > 0 ? 0.1 : vr, rh, met, clo);
-    return { pmv, ppd: ppdFromPmv(pmv), ce };
+  /* Evaluación completa de un punto (comf.pmvElevatedAirspeed de CBE).
+     vel = velocidad del aire medida; clo = aislamiento original. Las correcciones por actividad se aplican aquí, una sola vez:
+       · PMV/PPD usan la velocidad relativa y el aislamiento dinámico (y, si hay efecto de enfriamiento, Ta−CE, MRT−CE, v = 0.1).
+       · SET usa la velocidad medida y el aislamiento original, igual que CBE.
+     opts.selfAirSpeed = false desactiva la velocidad generada por la actividad; opts.skipSet omite el SET (más rápido). */
+  function evaluate(ta, tr, vel, rh, met, clo, opts) {
+    const self = !opts || opts.selfAirSpeed !== false, wme = 0;
+    const vr = relativeSpeed(vel, met, self), cloD = dynamicClo(clo, met);
+    let ce = coolingEffect(ta, tr, vr, rh, met, cloD, wme), pmv;
+    if (vr <= STILL_AIR || ce === 0) { pmv = fanger(ta, tr, vr, rh, met, cloD); ce = 0; }
+    else pmv = fanger(ta - ce, tr - ce, STILL_AIR, rh, met, cloD);
+    return { pmv, ppd: ppdFromPmv(pmv), set: opts && opts.skipSet ? NaN : set(ta, tr, vel, rh, met, clo, wme), ce, vr, cloD, taAdj: ta - ce, trAdj: tr - ce };
   }
 
   function sensation(pmv) {
@@ -163,5 +189,5 @@
     return ['Frío', 'Fresco', 'Ligeramente fresco', 'Neutro', 'Ligeramente caluroso', 'Caluroso', 'Muy caluroso'][k + 3];
   }
 
-  G.Comfort = { pmvppd, set, coolingEffect, relativeSpeed, dynamicClo, sensation, LIMIT: 0.5 };
+  G.Comfort = { evaluate, set, coolingEffect, relativeSpeed, dynamicClo, secant, bisect, sensation, LIMIT: 0.5 };
 })(window);
