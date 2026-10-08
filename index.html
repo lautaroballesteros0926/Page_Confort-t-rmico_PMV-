@@ -57,6 +57,7 @@
         <div class="inp"><input type="number" id="clo_n" min="0" max="2" step="0.01" value="0.36" inputmode="decimal"><span class="unit">clo</span>
           <input type="range" id="clo_r" min="0" max="2" step="0.01" value="0.36" aria-label="Aislamiento de ropa"></div>
         <select id="clo_p" class="sub" aria-label="Vestimenta"></select>
+        <div class="note" id="clo_note"></div>
       </div>
 
       <h3>Ambiente</h3>
@@ -65,7 +66,7 @@
         <div class="inp"><input type="number" id="v_n" min="0" max="3" step="0.01" value="0.35" inputmode="decimal"><span class="unit">m/s</span>
           <input type="range" id="v_r" min="0" max="2" step="0.01" value="0.35" aria-label="Velocidad del aire"></div>
         <label class="chk"><input type="checkbox" id="v_csv" checked> usar columna del CSV</label>
-        <label class="chk"><input type="checkbox" id="v_act" checked> sumar velocidad por actividad: 0.3 · (met − 1) si met ≥ 1.2</label>
+        <label class="chk"><input type="checkbox" id="v_act" checked> sumar velocidad por actividad: 0.3 · (met − 1) si met &gt; 1</label>
         <div class="note" id="v_note"></div>
       </div>
       <div class="field">

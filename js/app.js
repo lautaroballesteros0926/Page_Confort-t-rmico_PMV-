@@ -70,17 +70,18 @@
     const f = id => { const x = parseFloat($(id + '_n').value); return isFinite(x) ? Math.min(FIELDS[id][1], Math.max(FIELDS[id][0], x)) : NaN; };
     return { met: f('met'), clo: f('clo'), v: f('v'), tr: f('tr'), trMode: $('tr_mode').value, vCsv: $('v_csv').checked, vAct: $('v_act').checked };
   }
-  // Velocidad relativa = velocidad del aire + velocidad generada por la actividad (0.3·(met−1); se aplica solo si met ≥ 1.2, si no vale 0)
-  const actSpeed = p => (p.vAct && p.met >= 1.2 ? 0.3 * (p.met - 1) : 0);
+  // Velocidad relativa Vr = Va + 0.3·(M − 1) si M > 1 met (Vr = Va si no). Aislamiento dinámico Icl,d = Icl·(0.6 + 0.4/M) si M > 1.2 met.
+  // Ambas correcciones se aplican aquí, una sola vez; los modelos (PMV y SET) reciben Vr e Icl,d ya corregidos.
   function env(o, p) {
     const base = p.vCsv && isFinite(o.v) ? o.v : p.v;
-    return { vBase: base, vAct: actSpeed(p), v: base + actSpeed(p),
+    const v = p.vAct ? Comfort.relativeSpeed(base, p.met) : base;
+    return { vBase: base, vAct: v - base, v, cloD: Comfort.dynamicClo(p.clo, p.met),
              tr: p.trMode === 'ta' ? o.ta : (p.trMode === 'csv' && isFinite(o.tr) ? o.tr : p.tr) };
   }
   function computeSeries(p) {
     const R = S.records, key = [p.met, p.clo, p.v, p.tr, p.trMode, p.vCsv, p.vAct, R.length, R[0].ta, R[R.length - 1].ta].join('|');
     if (S.series && key === S.key) return;
-    S.series = R.map(o => { const e = env(o, p); return Comfort.pmvppd(o.ta, e.tr, e.v, o.rh, p.met, p.clo); });
+    S.series = R.map(o => { const e = env(o, p); return Comfort.pmvppd(o.ta, e.tr, e.v, o.rh, p.met, e.cloD); });
     S.key = key;
   }
 
@@ -105,10 +106,11 @@
     const R = S.records, n = R.length, o = R[S.sel], e = env(o, p), r = S.series[S.sel];
     const pmv = S.series.map(x => x.pmv), ppd = S.series.map(x => x.ppd);
     const ok = Math.abs(r.pmv) <= Comfort.LIMIT;
-    const set = Comfort.pierceSet(o.ta, e.tr, e.v, o.rh, p.met, p.clo);
+    const set = Comfort.set(o.ta, e.tr, e.v, o.rh, p.met, e.cloD);
 
     $('v_n').disabled = $('v_r').disabled = p.vCsv;
-    $('v_note').textContent = 'Velocidad usada: ' + e.vBase.toFixed(2) + ' + ' + e.vAct.toFixed(2) + ' = ' + e.v.toFixed(2) + ' m/s';
+    $('v_note').textContent = 'Medida: ' + e.vBase.toFixed(2) + ' m/s · Relativa: ' + e.vBase.toFixed(2) + ' + ' + e.vAct.toFixed(2) + ' = ' + e.v.toFixed(2) + ' m/s';
+    $('clo_note').textContent = 'Original: ' + p.clo.toFixed(2) + ' clo · Dinámico: ' + e.cloD.toFixed(3) + ' clo' + (p.met > 1.2 ? '' : ' (sin corrección, met ≤ 1.2)');
     $('tr_n').disabled = $('tr_r').disabled = p.trMode !== 'slider';
     syncPresets(p);
 
@@ -133,7 +135,7 @@
       : '✕ Fuera de la zona de confort (' + (r.pmv > 0 ? 'calor' : 'frío') + ')';
 
     const zone = Psychro.comfortZone(
-      (db, rh) => Comfort.pmvppd(db, p.trMode === 'ta' ? db : e.tr, e.v, rh, p.met, p.clo).pmv, Comfort.LIMIT);
+      (db, rh) => Comfort.pmvppd(db, p.trMode === 'ta' ? db : e.tr, e.v, rh, p.met, e.cloD).pmv, Comfort.LIMIT);
     const info = { label: o.label, ta: o.ta, rh: o.rh, tr: e.tr, v: e.v, met: p.met, clo: p.clo, pmv: r.pmv, ppd: r.ppd };
     const common = { info, view: $('psy_view').value, records: R, pmv, ppd, sel: S.sel, hasTime: S.hasTime, timeOnly: S.timeOnly };
     const onSelect = i => { stop(); go(i); };
