@@ -133,6 +133,71 @@
     return (a + b) / 2;
   }
 
+  /* ---------- adaptativo ASHRAE 55-2023 ---------- */
+  let roA = null;
+
+  function showBoxA(box, x, y, caption) {
+    const row = (k, v, u) => `<div><span>${k}</span><b>${v}</b><i>${u}</i></div>`;
+    box.innerHTML = `<small>${caption}</small>` + row('T<sub>rm</sub>', x.toFixed(1), '°C') + row('T<sub>op</sub>', y.toFixed(1), '°C');
+  }
+
+  // o: { records, series (Adaptive.evaluate por registro), sel, lines (texto del bloque), onSelect }
+  function adaptive(el, box, o) {
+    const t = theme(), AD = G.Adaptive, R = o.records, A = o.series, s = A[o.sel];
+    const xs = A.map(a => a.trm), ys = A.map(a => a.to);
+    const xmin = Math.min(AD.TRM_MIN, Math.floor(Math.min(...xs)) - 1), xmax = Math.max(AD.TRM_MAX, Math.ceil(Math.max(...xs)) + 1);
+    const ymin = Math.min(AD.TOP_MIN, Math.floor(Math.min(...ys)) - 1), ymax = Math.max(AD.TOP_MAX, Math.ceil(Math.max(...ys)) + 1);
+    const b = AD.bands(s.ce), tr = [];
+    const GL = '#2e7d32';
+
+    tr.push({ x: b.b80.x, y: b.b80.y, mode: 'lines', fill: 'toself', name: 'Aceptable 80 %', hoverinfo: 'skip',
+      fillcolor: 'rgba(46,157,60,0.30)', line: { color: GL, width: 1 } });
+    tr.push({ x: b.b90.x, y: b.b90.y, mode: 'lines', fill: 'toself', name: 'Aceptable 90 %', hoverinfo: 'skip',
+      fillcolor: 'rgba(30,125,40,0.55)', line: { color: GL, width: 1 } });
+
+    // registros
+    tr.push({ x: xs, y: ys, mode: 'lines', showlegend: false, hoverinfo: 'skip', line: { color: t.muted, width: 0.8, dash: 'dot' }, opacity: 0.5 });
+    tr.push({ x: xs, y: ys, mode: 'markers', name: 'Registros',
+      marker: { size: 7, color: A.map(a => a.to - a.tcmf), colorscale: SCALE, cmin: -3.5, cmax: 3.5, opacity: 0.8, line: { width: 0.6, color: 'rgba(0,0,0,.4)' },
+        colorbar: { title: { text: 'T<sub>op</sub> − T<sub>conf</sub> [K]' }, thickness: 10, len: 0.6, x: 1.1, outlinewidth: 0,
+          tickvals: [-3.5, -2.5, 0, 2.5, 3.5], ticktext: ['−3.5', '−2.5', '0', '+2.5', '+3.5'] } },
+      customdata: R.map((r, i) => [r.label, A[i].to - A[i].tcmf, A[i].acc90 ? '90 %' : (A[i].acc80 ? '80 %' : 'fuera')]),
+      hovertemplate: '%{customdata[0]}<br>T<sub>rm</sub> %{x:.1f} °C · T<sub>op</sub> %{y:.1f} °C<br>T<sub>op</sub> − T<sub>conf</sub> %{customdata[1]:+.1f} K · aceptable: %{customdata[2]}<extra></extra>' });
+
+    // punto rojo seleccionado
+    tr.push({ x: [s.trm], y: [s.to], mode: 'markers', hoverinfo: 'skip', name: 'Seleccionado',
+      marker: { size: 16, color: '#e5261f', line: { width: 2, color: '#7a0b07' } } });
+
+    const axis = { showgrid: true, gridcolor: t.grid, zeroline: false, showline: true, linecolor: t.ink, ticks: 'outside', tickcolor: t.ink };
+    const text = o.lines.join('<br>');
+    Plotly.react(el, tr, Object.assign({}, base(t), { paper_bgcolor: t.card, plot_bgcolor: t.card,
+      xaxis: Object.assign({ title: 'Temperatura media exterior predominante [°C]', range: [xmin, xmax], tick0: 10, dtick: 2 }, axis),
+      yaxis: Object.assign({ title: 'Temperatura operativa [°C]', range: [ymin, ymax], dtick: 2 }, axis),
+      annotations: [{ xref: 'paper', yref: 'paper', x: 0.005, y: 0.985, xanchor: 'left', yanchor: 'top', align: 'left', showarrow: false,
+        text, font: { size: 16, color: t.ink } }],
+      showlegend: true, legend: { orientation: 'h', x: 0, y: 1.07 }, margin: { l: 60, r: 100, t: 34, b: 54 }
+    }), Object.assign({}, CFG, { toImageButtonOptions: { format: 'png', filename: 'adaptativo_' + R[o.sel].label.replace(/[^\w-]+/g, '_'), scale: 2 } })).then(gd => {
+      roA = { box, def: () => showBoxA(box, s.trm, s.to, 'Registro ' + R[o.sel].label) };
+      roA.def();
+      if (!gd._bound) {
+        gd._bound = true;
+        gd.on('plotly_click', ev => {
+          const p = ev.points.find(q => q.data.name === 'Registros');
+          if (p && o.onSelect) o.onSelect(p.pointIndex);
+        });
+      }
+      const drag = gd.querySelector('.nsewdrag');
+      if (drag && !drag._ro) {
+        drag._ro = true;
+        drag.addEventListener('mousemove', e => {
+          const bb = drag.getBoundingClientRect(), L = gd._fullLayout;
+          roA.box.style.display = 'block'; showBoxA(roA.box, L.xaxis.p2d(e.clientX - bb.left), L.yaxis.p2d(e.clientY - bb.top), 'Cursor');
+        });
+        drag.addEventListener('mouseleave', () => { roA.box.style.display = 'none'; });
+      }
+    });
+  }
+
   /* ---------- PMV en el tiempo ---------- */
   function timeseries(el, o) {
     const t = theme(), n = o.records.length, when = o.records.map(r => r.t);
@@ -165,5 +230,5 @@
     }), CFG);
   }
 
-  G.Charts = { psychro, timeseries, pie, SCALE };
+  G.Charts = { psychro, adaptive, timeseries, pie, SCALE };
 })(window);

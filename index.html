@@ -13,7 +13,7 @@
 <header class="top">
   <div class="top-in">
     <h1>Confort térmico · PMV / PPD</h1>
-    <p>Recorré el CSV o Excel registro por registro y mirá dónde cae cada punto en el gráfico psicrométrico.</p>
+    <p>Recorré el CSV o Excel registro por registro y mirá dónde cae cada punto en el gráfico psicrométrico y en el adaptativo.</p>
   </div>
 </header>
 
@@ -31,7 +31,7 @@
       <div class="info" id="info"></div>
       <button type="button" class="link" id="sample">Usar datos de ejemplo</button>
       <button type="button" class="link" id="tpl_xlsx">Descargar formato de ejemplo (.xlsx)</button>
-      <p class="note">Formato: .csv o .xlsx (se lee la primera hoja) con columnas de fecha/hora, temperatura de bulbo seco y humedad relativa (opcional: temp. radiante y velocidad del aire). Máx. 20 MB.</p>
+      <p class="note">Formato: .csv o .xlsx (se lee la primera hoja) con columnas de fecha/hora, temperatura de bulbo seco y humedad relativa (opcional: temp. radiante y velocidad del aire; para el método adaptativo, temp. media exterior predominante). Máx. 20 MB.</p>
       <details>
         <summary>Columnas detectadas</summary>
         <div class="map">
@@ -40,6 +40,7 @@
           <label>Humedad relativa</label><select id="c_rh"></select>
           <label>Temp. radiante</label><select id="c_tr"></select>
           <label>Vel. del aire</label><select id="c_v"></select>
+          <label>Temp. ext. media</label><select id="c_trm"></select>
         </div>
       </details>
     </section>
@@ -80,6 +81,16 @@
           <option value="slider">Valor fijo</option>
           <option value="ta">Igual a la temp. del aire</option>
         </select>
+      </div>
+      <div class="field">
+        <label class="t" for="trm_n">Temp. media exterior predominante</label>
+        <div class="inp"><input type="number" id="trm_n" min="-20" max="50" step="0.1" value="25" inputmode="decimal"><span class="unit">°C</span>
+          <input type="range" id="trm_r" min="0" max="40" step="0.1" value="25" aria-label="Temperatura media exterior predominante"></div>
+        <select id="trm_mode" class="sub">
+          <option value="csv">Columna del CSV</option>
+          <option value="slider">Valor fijo</option>
+        </select>
+        <div class="note">Solo para el método adaptativo.</div>
       </div>
     </section>
   </aside>
@@ -122,6 +133,24 @@
       <p class="note">Zona verde: |PMV| ≤ 0.5 para las condiciones del registro seleccionado. Pasá el mouse para leer valores; clic en un punto para elegirlo. El botón de cámara descarga el gráfico con los valores del registro.</p>
     </section>
 
+    <section class="card">
+      <div class="card-head"><h2>Método adaptativo · ASHRAE 55-2023</h2>
+        <button type="button" class="btn-txt" id="dl_both" title="Descarga el gráfico psicrométrico y el adaptativo en una sola imagen">⬇ Descargar ambos gráficos</button></div>
+      <div class="status" id="adp_status"></div>
+      <div class="res">
+        <div class="tile"><span>T operativa</span><b id="a_to">–</b></div>
+        <div class="tile"><span>T ext. media</span><b id="a_trm">–</b></div>
+        <div class="tile big"><span>Límites 80 %</span><b id="a_l80" style="font-size:1rem">–</b><small id="a_s80"></small></div>
+        <div class="tile big"><span>Límites 90 %</span><b id="a_l90" style="font-size:1rem">–</b><small id="a_s90"></small></div>
+      </div>
+      <div class="note adp-msg" id="adp_msg"></div>
+      <div class="psy-wrap">
+        <div id="adp" class="plot"></div>
+        <div id="adp-box" class="psy-box"></div>
+      </div>
+      <p class="note"><b>Nota:</b> método aplicable solo a espacios con ventilación natural controlados por los ocupantes que cumplan: (a) sin sistema mecánico de enfriamiento ni calefacción en operación; (b) tasa metabólica entre 1.0 y 1.3 met; y (c) ocupantes libres de adaptar su ropa a las condiciones interiores y exteriores, en un rango al menos de 0.5 a 1.0 clo. Las bandas corresponden al registro seleccionado (incluyen el efecto de enfriamiento por velocidad del aire). Clic en un punto para elegirlo.</p>
+    </section>
+
     <div class="two">
       <section class="card">
         <h2>PMV a lo largo del tiempo</h2>
@@ -140,6 +169,7 @@
 <script src="js/sheet.js"></script>
 <script src="js/comfort.js"></script>
 <script src="js/psychro.js"></script>
+<script src="js/adaptive.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/app.js"></script>
 </body>
