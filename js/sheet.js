@@ -59,21 +59,15 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  // kind: 'csv' | 'xlsx'. El CSV usa ; y coma decimal (se abre bien en Excel en español) y BOM UTF-8.
-  function downloadTemplate(kind) {
-    if (kind === 'xlsx') {
-      const X = G.XLSX;
-      if (!X) throw new Error('No se pudo cargar el generador de Excel (sin conexión). Descargá el formato en .csv.');
-      const ws = X.utils.aoa_to_sheet([TEMPLATE_HEADERS].concat(TEMPLATE_ROWS));
-      ws['!cols'] = TEMPLATE_HEADERS.map((h, j) => ({ wch: j === 0 ? 18 : 14 }));
-      const wb = X.utils.book_new();
-      X.utils.book_append_sheet(wb, ws, 'Datos');
-      save(new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })],
-        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'formato-datos-climaticos.xlsx');
-    } else {
-      const lines = [TEMPLATE_HEADERS].concat(TEMPLATE_ROWS).map(r => r.map(v => String(v).replace('.', ',')).join(';'));
-      save(new Blob(['\uFEFF' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' }), 'formato-datos-climaticos.csv');
-    }
+  function downloadTemplate() {
+    const X = G.XLSX;
+    if (!X) throw new Error('No se pudo cargar el generador de Excel (sin conexión).');
+    const ws = X.utils.aoa_to_sheet([TEMPLATE_HEADERS].concat(TEMPLATE_ROWS));
+    ws['!cols'] = TEMPLATE_HEADERS.map((h, j) => ({ wch: j === 0 ? 18 : 14 }));
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, 'Datos');
+    save(new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })],
+      { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'formato-datos-climaticos.xlsx');
   }
 
   G.Sheet = { toText, downloadTemplate };
