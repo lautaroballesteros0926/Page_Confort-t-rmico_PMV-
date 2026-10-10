@@ -65,9 +65,9 @@
   const TA_RANGE = [-40, 60], RH_RANGE = [0, 100];
 
   function checkFile(f) {
-    if (!/\.(csv|txt|tsv)$/i.test(f.name)) {
+    if (!/\.(csv|txt|tsv|xlsx|xlsm|xls)$/i.test(f.name)) {
       const ext = (f.name.match(/\.[^.]+$/) || ['(sin extensión)'])[0];
-      throw new Error('Formato no soportado: ' + ext + '. Subí un archivo .csv (si está en Excel, guardalo como "CSV").');
+      throw new Error('Formato no soportado: ' + ext + '. Subí un archivo .csv o .xlsx.');
     }
     if (f.size === 0) throw new Error('El archivo está vacío.');
     if (f.size > MAX_BYTES) throw new Error('El archivo pesa ' + (f.size / 1048576).toFixed(1) + ' MB; el máximo es 20 MB.');

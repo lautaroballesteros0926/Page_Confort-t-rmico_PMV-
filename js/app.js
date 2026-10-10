@@ -202,10 +202,15 @@
 
   function readFile(f, extra) {
     try { CSV.checkFile(f); } catch (e) { return showError(e); }
-    const r = new FileReader();
+    const xl = /\.xls[xm]?$/i.test(f.name), r = new FileReader();
     r.onerror = () => showError(new Error('No se pudo leer el archivo.'));
-    r.onload = () => { load(String(r.result), f.name); if (extra) $('info').textContent += ' (se ignoraron ' + extra + ' archivo(s) adicional(es))'; };
-    r.readAsText(f);
+    r.onload = () => {
+      let text;
+      try { text = xl ? window.Sheet.toText(r.result) : String(r.result); } catch (e) { return showError(e); }
+      load(text, f.name);
+      if (extra) $('info').textContent += ' (se ignoraron ' + extra + ' archivo(s) adicional(es))';
+    };
+    if (xl) r.readAsArrayBuffer(f); else r.readAsText(f);
   }
   $('file').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ''; });
   $('sample').addEventListener('click', () => load(window.SAMPLE_CSV, 'ejemplo (TEMP MIN Y HUM MAX.csv)'));

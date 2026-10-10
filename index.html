@@ -6,13 +6,14 @@
 <title>Confort Térmico PMV</title>
 <link rel="stylesheet" href="css/styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.0/plotly.min.js" charset="utf-8"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
 <header class="top">
   <div class="top-in">
     <h1>Confort térmico · PMV / PPD</h1>
-    <p>Recorré el CSV registro por registro y mirá dónde cae cada punto en el gráfico psicrométrico.</p>
+    <p>Recorré el CSV o Excel registro por registro y mirá dónde cae cada punto en el gráfico psicrométrico.</p>
   </div>
 </header>
 
@@ -21,15 +22,15 @@
     <section class="card">
       <h2>Datos climáticos</h2>
       <label class="drop" id="drop">
-        <input type="file" id="file" accept=".csv,.txt,.tsv" hidden>
-        <strong>Subir CSV</strong>
+        <input type="file" id="file" accept=".csv,.txt,.tsv,.xlsx,.xls" hidden>
+        <strong>Subir CSV o Excel</strong>
         <span>o arrastrarlo acá</span>
       </label>
       <div class="fname" id="fname"></div>
       <div class="err" id="err"></div>
       <div class="info" id="info"></div>
       <button type="button" class="link" id="sample">Usar datos de ejemplo</button>
-      <p class="note">Formato: .csv con columnas de fecha/hora, temperatura de bulbo seco y humedad relativa (opcional: temp. radiante y velocidad del aire). Máx. 20 MB.</p>
+      <p class="note">Formato: .csv o .xlsx (se lee la primera hoja) con columnas de fecha/hora, temperatura de bulbo seco y humedad relativa (opcional: temp. radiante y velocidad del aire). Máx. 20 MB.</p>
       <details>
         <summary>Columnas detectadas</summary>
         <div class="map">
@@ -135,6 +136,7 @@
 
 <script src="js/sample.js"></script>
 <script src="js/csv.js"></script>
+<script src="js/sheet.js"></script>
 <script src="js/comfort.js"></script>
 <script src="js/psychro.js"></script>
 <script src="js/charts.js"></script>
