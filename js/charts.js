@@ -149,6 +149,7 @@
     const ymin = Math.min(AD.TOP_MIN, Math.floor(Math.min(...ys)) - 1), ymax = Math.max(AD.TOP_MAX, Math.ceil(Math.max(...ys)) + 1);
     const b = AD.bands(s.ce), tr = [];
     const GL = '#2e7d32';
+    const side = el.clientWidth >= 760;   // ancho: valores en un panel a la derecha, sin tapar el gráfico
 
     tr.push({ x: b.b80.x, y: b.b80.y, mode: 'lines', fill: 'toself', name: 'Aceptable 80 %', hoverinfo: 'skip',
       fillcolor: 'rgba(46,157,60,0.30)', line: { color: GL, width: 1 } });
@@ -159,8 +160,8 @@
     tr.push({ x: xs, y: ys, mode: 'lines', showlegend: false, hoverinfo: 'skip', line: { color: t.muted, width: 0.8, dash: 'dot' }, opacity: 0.5 });
     tr.push({ x: xs, y: ys, mode: 'markers', name: 'Registros',
       marker: { size: 7, color: A.map(a => a.to - a.tcmf), colorscale: SCALE, cmin: -3.5, cmax: 3.5, opacity: 0.8, line: { width: 0.6, color: 'rgba(0,0,0,.4)' },
-        colorbar: { title: { text: 'T<sub>op</sub> − T<sub>conf</sub> [K]' }, thickness: 10, len: 0.6, x: 1.1, outlinewidth: 0,
-          tickvals: [-3.5, -2.5, 0, 2.5, 3.5], ticktext: ['−3.5', '−2.5', '0', '+2.5', '+3.5'] } },
+        colorbar: Object.assign({ title: { text: 'T<sub>op</sub> − T<sub>conf</sub> [K]' }, thickness: 10, len: side ? 0.5 : 0.6, x: side ? 1.02 : 1.1, outlinewidth: 0,
+          tickvals: [-3.5, -2.5, 0, 2.5, 3.5], ticktext: ['−3.5', '−2.5', '0', '+2.5', '+3.5'] }, side ? { yanchor: 'bottom', y: 0 } : {}) },
       customdata: R.map((r, i) => [r.label, A[i].to - A[i].tcmf, A[i].acc90 ? '90 %' : (A[i].acc80 ? '80 %' : 'fuera')]),
       hovertemplate: '%{customdata[0]}<br>T<sub>rm</sub> %{x:.1f} °C · T<sub>op</sub> %{y:.1f} °C<br>T<sub>op</sub> − T<sub>conf</sub> %{customdata[1]:+.1f} K · aceptable: %{customdata[2]}<extra></extra>' });
 
@@ -173,9 +174,12 @@
     Plotly.react(el, tr, Object.assign({}, base(t), { paper_bgcolor: t.card, plot_bgcolor: t.card,
       xaxis: Object.assign({ title: 'Temperatura media exterior predominante [°C]', range: [xmin, xmax], tick0: 10, dtick: 2 }, axis),
       yaxis: Object.assign({ title: 'Temperatura operativa [°C]', range: [ymin, ymax], dtick: 2 }, axis),
-      annotations: [{ xref: 'paper', yref: 'paper', x: 0.005, y: 0.985, xanchor: 'left', yanchor: 'top', align: 'left', showarrow: false,
-        text, font: { size: 16, color: t.ink } }],
-      showlegend: true, legend: { orientation: 'h', x: 0, y: 1.07 }, margin: { l: 60, r: 100, t: 34, b: 54 }
+      annotations: [side
+        ? { xref: 'paper', yref: 'paper', x: 1, y: 1, xshift: 24, xanchor: 'left', yanchor: 'top', align: 'left', showarrow: false,
+            text, font: { size: 14, color: t.ink } }
+        : { xref: 'paper', yref: 'paper', x: 0.005, y: 0.985, xanchor: 'left', yanchor: 'top', align: 'left', showarrow: false,
+            text, font: { size: 12, color: t.ink } }],
+      showlegend: true, legend: { orientation: 'h', x: 0, y: 1.07 }, margin: { l: 60, r: side ? 250 : 100, t: 34, b: 54 }
     }), Object.assign({}, CFG, { toImageButtonOptions: { format: 'png', filename: 'adaptativo_' + R[o.sel].label.replace(/[^\w-]+/g, '_'), scale: 2 } })).then(gd => {
       roA = { box, def: () => showBoxA(box, s.trm, s.to, 'Registro ' + R[o.sel].label) };
       roA.def();
