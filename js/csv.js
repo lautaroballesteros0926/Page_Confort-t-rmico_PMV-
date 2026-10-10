@@ -32,16 +32,18 @@
     return n > 0 && ok / n >= 0.5;
   }
 
-  // Devuelve {date, ta, rh, tr, v} con el índice de columna (o -1)
+  // Devuelve {date, ta, rh, tr, v, trm} con el índice de columna (o -1)
   function detect(t) {
     const H = t.headers.map(norm);
     const find = (re, ex) => H.findIndex(h => re.test(h) && !(ex && ex.test(h)));
     const m = {};
-    m.tr = find(/rad|mrt|\btr\b|globo|globe/);
+    const OUT = /ext|outdoor|predomin|prevail|running|trm|tout/;
+    m.trm = find(OUT);
+    m.tr = find(/rad|mrt|\btr\b|globo|globe/, OUT);
     m.rh = find(/hum|\brh\b|\bhr\b|relativ/, /absol|ratio|especif/);
-    m.v = find(/vel|viento|wind|speed/);
-    m.ta = find(/temp|bulbo|seco|dry|\bdb\b|\btbs\b|\bta\b|aire/, /rad|mrt|globo|hum|vel|viento|rocio|dew|humedo|wet/);
-    m.date = find(/fecha|date|timestamp|datetime|hora|time|dia\b/);
+    m.v = find(/vel|viento|wind|speed/, OUT);
+    m.ta = find(/temp|bulbo|seco|dry|\bdb\b|\btbs\b|\bta\b|aire/, /rad|mrt|globo|hum|vel|viento|rocio|dew|humedo|wet|ext|outdoor|predomin|prevail|running|trm|tout/);
+    m.date = find(/fecha|date|timestamp|datetime|hora|time|\bdia\b/);
     const used = new Set(Object.values(m));
     const free = () => H.findIndex((h, j) => !used.has(j) && isNumericCol(t, j));
     m.guessed = m.ta < 0 || m.rh < 0;
@@ -99,7 +101,8 @@
       const ds = ci.date < 0 ? null : (join ? (r[dIdx] + ' ' + r[tIdx]).trim() : r[ci.date]);
       rows.push({ ds, ta, rh,
         tr: ci.tr >= 0 ? num(r[ci.tr], t.delim) : NaN,
-        v: ci.v >= 0 ? num(r[ci.v], t.delim) : NaN });
+        v: ci.v >= 0 ? num(r[ci.v], t.delim) : NaN,
+        trm: ci.trm >= 0 ? num(r[ci.trm], t.delim) : NaN });
     });
     if (rows.length && Math.max(...rows.map(o => o.rh)) <= 1.0) rows.forEach(o => o.rh *= 100);
     const inRange = rows.filter(o => o.ta >= TA_RANGE[0] && o.ta <= TA_RANGE[1] && o.rh >= RH_RANGE[0] && o.rh <= RH_RANGE[1]);

@@ -45,11 +45,11 @@
   }
 
   /* ---- plantilla descargable ---- */
-  const TEMPLATE_HEADERS = ['Fecha_Hora', 'Temp_Aire', 'Humedad', 'Temp_Radiante', 'Vel_Viento'];
+  const TEMPLATE_HEADERS = ['Fecha_Hora', 'Temp_Aire', 'Humedad', 'Temp_Radiante', 'Vel_Viento', 'Temp_Exterior_Media'];
   const TEMPLATE_ROWS = [
-    ['15/01/2025 07:00', 26.5, 71, 25.3, 0.35],
-    ['15/01/2025 08:00', 27.4, 72, 26.0, 0.35],
-    ['15/01/2025 09:00', 28.4, 72, 28.8, 0.35]
+    ['15/01/2025 07:00', 26.5, 71, 25.3, 0.35, 25.5],
+    ['15/01/2025 08:00', 27.4, 72, 26.0, 0.35, 25.5],
+    ['15/01/2025 09:00', 28.4, 72, 28.8, 0.35, 25.5]
   ];
 
   function save(blob, name) {
@@ -63,7 +63,7 @@
     const X = G.XLSX;
     if (!X) throw new Error('No se pudo cargar el generador de Excel (sin conexión).');
     const ws = X.utils.aoa_to_sheet([TEMPLATE_HEADERS].concat(TEMPLATE_ROWS));
-    ws['!cols'] = TEMPLATE_HEADERS.map((h, j) => ({ wch: j === 0 ? 18 : 14 }));
+    ws['!cols'] = TEMPLATE_HEADERS.map((h, j) => ({ wch: j === 0 ? 18 : j === 5 ? 20 : 14 }));
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, ws, 'Datos');
     save(new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })],
