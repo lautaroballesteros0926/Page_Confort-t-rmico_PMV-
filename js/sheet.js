@@ -44,5 +44,37 @@
     return rows.map(r => r.map(quote).join(';')).join('\n');
   }
 
-  G.Sheet = { toText };
+  /* ---- plantilla descargable ---- */
+  const TEMPLATE_HEADERS = ['Fecha_Hora', 'Temp_Aire', 'Humedad', 'Temp_Radiante', 'Vel_Viento'];
+  const TEMPLATE_ROWS = [
+    ['15/01/2025 07:00', 26.5, 71, 25.3, 0.35],
+    ['15/01/2025 08:00', 27.4, 72, 26.0, 0.35],
+    ['15/01/2025 09:00', 28.4, 72, 28.8, 0.35]
+  ];
+
+  function save(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // kind: 'csv' | 'xlsx'. El CSV usa ; y coma decimal (se abre bien en Excel en español) y BOM UTF-8.
+  function downloadTemplate(kind) {
+    if (kind === 'xlsx') {
+      const X = G.XLSX;
+      if (!X) throw new Error('No se pudo cargar el generador de Excel (sin conexión). Descargá el formato en .csv.');
+      const ws = X.utils.aoa_to_sheet([TEMPLATE_HEADERS].concat(TEMPLATE_ROWS));
+      ws['!cols'] = TEMPLATE_HEADERS.map((h, j) => ({ wch: j === 0 ? 18 : 14 }));
+      const wb = X.utils.book_new();
+      X.utils.book_append_sheet(wb, ws, 'Datos');
+      save(new Blob([X.write(wb, { type: 'array', bookType: 'xlsx' })],
+        { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'formato-datos-climaticos.xlsx');
+    } else {
+      const lines = [TEMPLATE_HEADERS].concat(TEMPLATE_ROWS).map(r => r.map(v => String(v).replace('.', ',')).join(';'));
+      save(new Blob(['\uFEFF' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' }), 'formato-datos-climaticos.csv');
+    }
+  }
+
+  G.Sheet = { toText, downloadTemplate };
 })(window);

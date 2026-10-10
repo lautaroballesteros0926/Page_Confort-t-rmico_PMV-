@@ -214,6 +214,9 @@
   }
   $('file').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ''; });
   $('sample').addEventListener('click', () => load(window.SAMPLE_CSV, 'ejemplo (TEMP MIN Y HUM MAX.csv)'));
+  ['csv', 'xlsx'].forEach(k => $('tpl_' + k).addEventListener('click', () => {
+    try { window.Sheet.downloadTemplate(k); } catch (e) { showError(e); }
+  }));
   const drop = $('drop');
   ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
